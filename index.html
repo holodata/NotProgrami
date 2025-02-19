@@ -202,11 +202,38 @@
     </div>
 
     <script>
-        let notes = JSON.parse(localStorage.getItem('notes')) || [];
-        let noteId = notes.length ? Math.max(...notes.map(note => note.id)) + 1 : 1;
-        const filePath = '\\srvfile\\HAKEDIS\\6- Raporlar ve Takip Tabloları\\3-Muhtelif Çalışmalar\\notlar.json';
+        const GITHUB_API_URL = 'https://api.github.com';
+        const REPO_NAME = 'holodata/NotProgrami';
+        const TOKEN = 'YOUR_GITHUB_PERSONAL_ACCESS_TOKEN';
 
-        function addNote() {
+        async function fetchIssues() {
+            const response = await fetch(`${GITHUB_API_URL}/repos/${REPO_NAME}/issues`, {
+                headers: {
+                    'Authorization': `token ${TOKEN}`,
+                    'Accept': 'application/vnd.github.v3+json'
+                }
+            });
+            return response.json();
+        }
+
+        async function createIssue(note) {
+            const response = await fetch(`${GITHUB_API_URL}/repos/${REPO_NAME}/issues`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `token ${TOKEN}`,
+                    'Accept': 'application/vnd.github.v3+json',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    title: note.projectName,
+                    body: `**Group:** ${note.groupName}\n**Responsible:** ${note.responsible}\n**Topic:** ${note.topic}\n**Description:** ${note.description}\n**Date:** ${note.date}`,
+                    labels: [note.groupName]
+                })
+            });
+            return response.json();
+        }
+
+        async function addNote() {
             const groupName = document.getElementById('groupName').value;
             const responsible = document.getElementById('responsible').value;
             const projectName = document.getElementById('projectName').value;
@@ -216,20 +243,18 @@
             const date = dateInput ? formatDate(dateInput) : formatDate(new Date());
 
             const note = {
-                id: noteId++,
                 groupName,
                 responsible,
                 projectName,
                 topic,
                 description,
-                date,
-                changeDate: ''
+                date
             };
-            notes.unshift(note);
-            saveNotes();
+
+            await createIssue(note);
+            showTooltip("Not başarıyla eklendi!");
             renderNotes();
             clearInputs();
-            showTooltip("Not başarıyla eklendi!");
         }
 
         function formatDate(date) {
@@ -239,14 +264,25 @@
             return `${day}.${month}`;
         }
 
-        function renderNotes() {
+        function clearInputs() {
+            document.getElementById('groupName').selectedIndex = 0;
+            document.getElementById('responsible').selectedIndex = 0;
+            document.getElementById('projectName').value = '';
+            document.getElementById('topic').value = '';
+            document.getElementById('description').value = '';
+            document.getElementById('date').value = '';
+        }
+
+        async function renderNotes() {
             const notesContainer = document.getElementById('notesContainer');
             notesContainer.innerHTML = '';
-            const groupedNotes = notes.reduce((acc, note) => {
-                if (!acc[note.groupName]) {
-                    acc[note.groupName] = [];
+            const issues = await fetchIssues();
+            const groupedNotes = issues.reduce((acc, issue) => {
+                const group = issue.labels[0]?.name || 'Genel';
+                if (!acc[group]) {
+                    acc[group] = [];
                 }
-                acc[note.groupName].push(note);
+                acc[group].push(issue);
                 return acc;
             }, {});
 
@@ -262,24 +298,19 @@
                                 <th>Açıklama</th>
                                 <th>Sorumlu</th>
                                 <th class="fixed-width">Tarih</th>
-                                <th class="fixed-width">Değişiklik</th>
                                 <th class="action-width">İşlemler</th>
                             </tr>
                         </thead>
                         <tbody>
                             ${groupNotes.map(note => `
                                 <tr>
-                                    <td onclick="copyToInputFields(${JSON.stringify(note)})">${note.projectName}</td>
-                                    <td>${note.topic}</td>
-                                    <td>
-                                        <div contenteditable="true" class="editable" onblur="saveDescription(${note.id}, this)">${note.description}</div>
-                                    </td>
-                                    <td>${note.responsible}</td>
-                                    <td>${note.date}</td>
-                                    <td>${note.changeDate || '-'}</td>
+                                    <td>${note.title}</td>
+                                    <td>${note.body.match(/(?<=\*\*Topic:\*\*\s)(.*?)(?=\n)/)[0]}</td>
+                                    <td>${note.body.match(/(?<=\*\*Description:\*\*\s)(.*?)(?=\n)/)[0]}</td>
+                                    <td>${note.body.match(/(?<=\*\*Responsible:\*\*\s)(.*?)(?=\n)/)[0]}</td>
+                                    <td>${note.body.match(/(?<=\*\*Date:\*\*\s)(.*?)(?=\n)/)[0]}</td>
                                     <td class="action-buttons" style="border: none;">
-                                        <button onclick="editNote(${note.id})">Düzenle</button>
-                                        <button onclick="deleteNote(${note.id})">Sil</button>
+                                        <button onclick="deleteNote(${note.number})">Sil</button>
                                     </td>
                                 </tr>
                             `).join('')}
@@ -289,63 +320,20 @@
             }
         }
 
-        function copyToInputFields(note) {
-            document.getElementById('groupName').value = note.groupName;
-            document.getElementById('responsible').value = note.responsible;
-            document.getElementById('projectName').value = note.projectName;
-            document.getElementById('topic').value = note.topic;
-            document.getElementById('description').value = note.description;
-            document.getElementById('date').value = note.date;
-            showTooltip("Bilgiler kopyalandı!");
-        }
-
-        function clearInputs() {
-            document.getElementById('groupName').selectedIndex = 0;
-            document.getElementById('responsible').selectedIndex = 0;
-            document.getElementById('projectName').value = '';
-            document.getElementById('topic').value = '';
-            document.getElementById('description').value = '';
-            document.getElementById('date').value = '';
-        }
-
-        function saveNotes() {
-            localStorage.setItem('notes', JSON.stringify(notes));
-            // Dosyayı belirtilen klasöre kaydet
-            // Not: Tarayıcı güvenlik nedeniyle doğrudan dosya sistemine yazma işlemi yapamaz.
-            // Bunun için bir sunucu veya Node.js gibi bir arka uç gereklidir.
-        }
-
-        function deleteNote(id) {
-            notes = notes.filter(note => note.id !== id);
-            saveNotes();
-            renderNotes();
+        async function deleteNote(issueNumber) {
+            await fetch(`${GITHUB_API_URL}/repos/${REPO_NAME}/issues/${issueNumber}`, {
+                method: 'PATCH',
+                headers: {
+                    'Authorization': `token ${TOKEN}`,
+                    'Accept': 'application/vnd.github.v3+json',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    state: 'closed'
+                })
+            });
             showTooltip("Not başarıyla silindi!");
-        }
-
-        function editNote(id) {
-            const note = notes.find(note => note.id === id);
-            if (note) {
-                document.getElementById('groupName').value = note.groupName;
-                document.getElementById('responsible').value = note.responsible;
-                document.getElementById('projectName').value = note.projectName;
-                document.getElementById('topic').value = note.topic;
-                document.getElementById('description').value = note.description;
-                document.getElementById('date').value = note.date;
-
-                deleteNote(id);
-                showTooltip("Not düzenlenmek üzere alındı!");
-            }
-        }
-
-        function saveDescription(id, input) {
-            const note = notes.find(note => note.id === id);
-            if (note) {
-                note.description = input.innerText;
-                note.changeDate = formatDate(new Date());
-                saveNotes();
-                renderNotes();
-                showTooltip("Açıklama başarıyla güncellendi!");
-            }
+            renderNotes();
         }
 
         function showTooltip(message) {
@@ -359,24 +347,24 @@
 
         function searchNotes() {
             const searchValue = document.getElementById('searchInput').value.toLowerCase();
-            const filteredNotes = notes.filter(note => {
-                return note.projectName.toLowerCase().includes(searchValue) ||
-                       note.topic.toLowerCase().includes(searchValue) ||
-                       note.description.toLowerCase().includes(searchValue) ||
-                       note.groupName.toLowerCase().includes(searchValue) ||
-                       note.responsible.toLowerCase().includes(searchValue);
+            fetchIssues().then(issues => {
+                const filteredNotes = issues.filter(note => {
+                    return note.title.toLowerCase().includes(searchValue) ||
+                           note.body.toLowerCase().includes(searchValue);
+                });
+                renderFilteredNotes(filteredNotes);
             });
-            renderFilteredNotes(filteredNotes);
         }
 
         function renderFilteredNotes(filteredNotes) {
             const notesContainer = document.getElementById('notesContainer');
             notesContainer.innerHTML = '';
             const groupedNotes = filteredNotes.reduce((acc, note) => {
-                if (!acc[note.groupName]) {
-                    acc[note.groupName] = [];
+                const group = note.labels[0]?.name || 'Genel';
+                if (!acc[group]) {
+                    acc[group] = [];
                 }
-                acc[note.groupName].push(note);
+                acc[group].push(note);
                 return acc;
             }, {});
 
@@ -392,24 +380,19 @@
                                 <th>Açıklama</th>
                                 <th>Sorumlu</th>
                                 <th class="fixed-width">Tarih</th>
-                                <th class="fixed-width">Değişiklik</th>
                                 <th class="action-width">İşlemler</th>
                             </tr>
                         </thead>
                         <tbody>
                             ${groupNotes.map(note => `
                                 <tr>
-                                    <td onclick="copyToInputFields(${JSON.stringify(note)})">${note.projectName}</td>
-                                    <td>${note.topic}</td>
-                                    <td>
-                                        <div contenteditable="true" class="editable" onblur="saveDescription(${note.id}, this)">${note.description}</div>
-                                    </td>
-                                    <td>${note.responsible}</td>
-                                    <td>${note.date}</td>
-                                    <td>${note.changeDate || '-'}</td>
+                                    <td>${note.title}</td>
+                                    <td>${note.body.match(/(?<=\*\*Topic:\*\*\s)(.*?)(?=\n)/)[0]}</td>
+                                    <td>${note.body.match(/(?<=\*\*Description:\*\*\s)(.*?)(?=\n)/)[0]}</td>
+                                    <td>${note.body.match(/(?<=\*\*Responsible:\*\*\s)(.*?)(?=\n)/)[0]}</td>
+                                    <td>${note.body.match(/(?<=\*\*Date:\*\*\s)(.*?)(?=\n)/)[0]}</td>
                                     <td class="action-buttons" style="border: none;">
-                                        <button onclick="editNote(${note.id})">Düzenle</button>
-                                        <button onclick="deleteNote(${note.id})">Sil</button>
+                                        <button onclick="deleteNote(${note.number})">Sil</button>
                                     </td>
                                 </tr>
                             `).join('')}
@@ -417,28 +400,6 @@
                     </table>
                 `;
             }
-        }
-
-        function exportNotes() {
-            const notes = JSON.parse(localStorage.getItem('notes')) || [];
-            const blob = new Blob([JSON.stringify(notes, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'notlar.json'; // Dosya adı
-            a.click();
-            URL.revokeObjectURL(url);
-        }
-
-        function importNotes(event) {
-            const file = event.target.files[0];
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const importedNotes = JSON.parse(e.target.result);
-                localStorage.setItem('notes', JSON.stringify(importedNotes));
-                renderNotes(); // Notları güncelle
-            };
-            reader.readAsText(file);
         }
 
         document.addEventListener('DOMContentLoaded', renderNotes);
